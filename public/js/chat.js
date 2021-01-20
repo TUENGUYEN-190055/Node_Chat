@@ -12,7 +12,8 @@ const userName = $('.userName');
 const userNumber = $('.userNumber');
 const FADE_TIME = 500;
 const USER_ICON_SIZE = 32;
-const STAMP_WIDTH = 150;
+const STAMP_WIDTH = 125;
+const IMAGE_WIDTH = 500;
 let user = {};
 let users = {};
 
@@ -70,10 +71,24 @@ $(() => {
             index++;
             let imageId = 'stamp_' + index;
             let a = $('<a>').attr({ 'stamp': imageId, 'class': 'sendStamp' });
-            let img = $('<img>').attr({'id': imageId, 'src': imagePath(stamp), 'width': 100 });
+            let img = $('<img>').attr({ 'id': imageId, 'src': imagePath(stamp), 'width': 100 });
             a.append(img);
             stampList.append(a);
         })
+    }
+    createChatImage = (data, params) => {
+        if (!user.token) return;
+        console.log(data);
+
+        let isToken = hasToken(data);
+        let headerElement = createHeaderElement(data, isToken);
+        let img = $('<img>').attr('src', data.image).attr('width', params.imageWidth);
+        let messageElement = $('<div>').addClass('text-center').append(img);
+        let footerElement = createFooterElement(data);
+        let chatElement = $('<div>').hide().append([headerElement, messageElement, footerElement]);
+
+        myChatList.prepend(chatElement);
+        chatElement.fadeIn(FADE_TIME);
     }
     createHeaderElement = (data, isToken) => {
         let dateStyle = (isToken) ? 'p-3 text-primary' : 'p-1 text-dark';
@@ -115,7 +130,7 @@ $(() => {
         let isToken = hasToken(data);
         let headerElement = createHeaderElement(data, isToken);
         let img = $('<img>').attr('src', data.image).attr('width', STAMP_WIDTH);
-        let messageElement = $('<div>').addClass('text-center').append(img);
+        let messageElement = $('<div>').append(img);
         let footerElement = createFooterElement(data);
         let chatElement = $('<div>').hide().append([headerElement, messageElement, footerElement]);
 
@@ -159,24 +174,27 @@ $(() => {
     });
 
     // server から login 情報取得
+    //ユーザログイン完了
     socket.on('logined', (data) => {
-        console.log('logined');
         if (data.user) {
             user = data.user;
             users = data.users;
 
+            //ユーザ名を表示
             userName.text(user.name);
+
+            //ユーザ一覧を更新
             updateUserList();
         }
     });
 
     // login 情報（ブロードキャスト）
     socket.on('user_joined', (data) => {
-        console.log('user_joined');
         if (data.user && data.users) {
-            let message = data.user.name + ' joined.';
+            let message = data.user.name + ' さんが入室しました';
             addMessage(message);
 
+            //ユーザ一覧を更新
             users = data.users;
             updateUserList();
         }
@@ -184,19 +202,21 @@ $(() => {
 
     // ログアウト受信（ブロードキャスト）
     socket.on('user_left', (data) => {
-        console.log('user_left');
-        let message = data.username + ' logout.';
+        let message = data.username + ' さんが退出しました';
         addMessage(message);
-
-        users = data.users;
         updateUserList();
     });
 
     // スタンプ読み込み
     socket.on('loadStamp', (data) => {
-        console.log('loadStamp');
         createChatStamp(data);
     });
+
+    socket.on('load_image', (data) => {
+        console.log('load_image');
+        let params = { imageWidth: IMAGE_WIDTH };
+        createChatImage(data, params);
+    })
 
     // ユーザ一覧
     socket.on('show_users', (data) => {
@@ -206,30 +226,49 @@ $(() => {
         updateUserList();
     });
 
+    $('.uploadImage').on('change', (event) => {
+        let file = event.target.files[0];
+        let fileReader = new FileReader();
+        fileReader.onloadend = () => {
+            let data = {};
+            data.image = fileReader.result;
+            data.user = user;
+            console.log(data);
+            socket.emit('upload_image', data);
+        }
+        fileReader.readAsDataURL(file);
+        $('.uploadImage').val('');
+    })
+
     // client からの server へメッセージ
     $('#send').on('click', () => {
         if (!user.token) return;
         if (!message.val()) return;
 
-        socket.emit('client_to_server', {
+        let data = {
             message: message.val(),
-            user: user,
-        });
+            user: user
+        }
+        socket.emit('client_to_server', data);
+
         message.val('');
     });
 
     // サーバーへ login
+    // id = login の Element をクリックしたら
     $('#login').on('click', () => {
-        user = {};
+        let user = {}
         if (inputName.val()) {
+            //ログイン表示画面を隠す
             loginArea.hide();
+            //チャット画面を表示
             chatArea.fadeIn(FADE_TIME);
 
+            //ユーザ情報作成
             user.name = inputName.val();
             user.icon = $('input[name=icon]:checked').val();
-            socket.emit('login', user);
 
-            console.log(user);
+            socket.emit('login', user);
         }
     });
 
@@ -237,12 +276,12 @@ $(() => {
         stampList.toggle();
     });
 
+    //画像を base64 に変換してサーバにユーザ情報とともに送信
     $('.sendStamp').on('click', (event) => {
-
         const mime_type = 'image/png';
         const image = new Image();
         image.src = $(event.target).attr('src');
-        image.onload = function(event) {
+        image.onload = function (event) {
             console.log(event);
             const canvas = document.createElement('canvas');
             canvas.width = image.naturalWidth;
@@ -251,23 +290,16 @@ $(() => {
             ctx.drawImage(image, 0, 0);
             let base64 = canvas.toDataURL(mime_type);
             let data = { user: user, image: base64 };
-            socket.emit('sendStamp', data);
-            stampList.toggle();
+            socket.emit('sendStamp', data); stampList.toggle();
         }
     });
 
     //ログアウト処理
     $('#logout').on('click', () => {
-        console.log('logout');
         socket.emit('logout');
-        user = {};
-        chatArea.fadeOut(FADE_TIME);
+        user = {}
         loginArea.fadeIn(FADE_TIME);
-    });
-
-    $('#users').click(() => {
-        console.log('users');
-        socket.emit('userList');
+        chatArea.fadeOut(FADE_TIME);
     });
 
 })

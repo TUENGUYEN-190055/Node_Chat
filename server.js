@@ -14,19 +14,16 @@ app.get('/', (req, res) => {
 })
 
 logout = (socket) => {
-    console.log('logout');
-
-    let user = fetchUser(socket);
+    user = fetchUser(socket);
     if (!user) return;
 
-    //ユーザ削除
     delete users[socket.id];
 
-    //送信元以外全てのクライアントに送信
-    socket.broadcast.emit('user_left', {
+    let data = {
         username: user.name,
         users: users,
-    });
+    }
+    socket.broadcast.emit('user_left', data);
 }
 
 fetchUser = (socket) => {
@@ -39,27 +36,22 @@ generateToken = () => {
     return token;
 }
 
-//connection イベント 
+//connection イベント
 io.on('connection', (socket) => {
-    console.log(socket.id);
+    //socket.id の確認
 
     // client から server のメッセージ
     socket.on('client_to_server', (data) => {
         data.datetime = new Date();
         console.log(data);
-        // server から client へのメッセージ
         io.emit('server_to_client', data);
     })
 
     //ログイン処理
     socket.on('login', (user) => {
-        console.log('login');
-
         //user.isConnect = true なら終了
         if (user.isConnect) return;
-
-        //user.isConnect を true にする
-        user.isConnect = true;
+        user.isConncet = true;
 
         //トークン発行
         user.token = generateToken();
@@ -67,9 +59,8 @@ io.on('connection', (socket) => {
         //Socket ID をキーに user を users 配列に登録
         users[socket.id] = user;
 
-        //data の作成
-        let data = { user: user, users: users };
-        console.log(user);
+        //クライアントに返す data の作成
+        let data = { user: user, users: users }
 
         //送信元の「logined」に、データ送信 emit()
         socket.emit('logined', data);
@@ -81,31 +72,33 @@ io.on('connection', (socket) => {
     //スタンプ送受信
     socket.on('sendStamp', (data) => {
         data.datetime = new Date();
-        console.log('sendStamp');
         io.emit('loadStamp', data);
+    });
+
+    //画像送受信
+    socket.on('upload_image', (data) => {
+        console.log('upload_image');
+        data.datetime = new Date();
+        io.emit('load_image', data);
     });
 
     //ユーザ一覧
     socket.on('userList', () => {
-        console.log('userList');
-        console.log(users);
-        socket.emit('show_users', {
-            users: users,
-        });
+        //送信元の show_users に users をデータ送信
     });
 
     //ログアウト
     socket.on('logout', () => {
-        console.log('logout');
         logout(socket);
     });
 
+    //切断
     socket.on('disconnect', () => {
         console.log('disconnect');
         logout(socket);
     });
 
-})
+});
 
 const port = config.server.port;
 const host = config.server.host;
